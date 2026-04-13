@@ -79,13 +79,8 @@ void UPickInteractionComponent::TryPickActor()
 	}
 	HitActor->SetActorEnableCollision(false);
 
-	// 화면상 크기 유지를 위해 거리 비례 스케일 적용
-	const float HitDistance = FVector::Dist(HitResult.ImpactPoint, WorldLocation);
-	if (HitDistance > KINDA_SMALL_NUMBER)
-	{
-		const float ScaleFactor = HoldDistance / HitDistance;
-		HitActor->SetActorScale3D(OriginalScale * ScaleFactor);
-	}
+	// 지정된 배율로 스케일 축소
+	HitActor->SetActorScale3D(OriginalScale * HoldScaleMultiplier);
 
 	// 드롭 위치 초기값 = 집은 지점
 	LastValidDropLocation = HitResult.ImpactPoint;
@@ -139,14 +134,21 @@ void UPickInteractionComponent::Drop()
 
 	AActor* Actor = HeldActor.Get();
 
-	// 마지막 유효 위치에 배치
+	// 스케일 먼저 복원 (바운드 계산에 필요)
+	Actor->SetActorScale3D(OriginalScale);
+
+	// 마지막 유효 위치에 배치 — 바운드 하단이 바닥면과 맞닿도록 Z 보정
 	if (bHasValidDropLocation)
 	{
 		Actor->SetActorLocation(LastValidDropLocation, false, nullptr, ETeleportType::TeleportPhysics);
+
+		const FBox Bounds = Actor->GetComponentsBoundingBox(true);
+		const float BottomOffset = Actor->GetActorLocation().Z - Bounds.Min.Z;
+		const FVector FinalLocation = LastValidDropLocation + FVector(0.f, 0.f, BottomOffset);
+		Actor->SetActorLocation(FinalLocation, false, nullptr, ETeleportType::TeleportPhysics);
 	}
 
-	// 상태 복원
-	Actor->SetActorScale3D(OriginalScale);
+	// 충돌/물리 복원
 	Actor->SetActorEnableCollision(true);
 	if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
 	{

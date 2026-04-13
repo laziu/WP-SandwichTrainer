@@ -36,6 +36,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Pick)
 	float TraceDistance = 5000.0f;
 
+	// 집고 있는 동안 적용할 스케일 배율 (1.0 = 원본 크기)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Pick)
+	float HoldScaleMultiplier = 0.3f;
+
 private:
 	void OnClickStarted(const struct FInputActionValue& Value);
 	void OnClickCompleted(const struct FInputActionValue& Value);
