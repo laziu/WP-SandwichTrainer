@@ -68,11 +68,13 @@ void USandwichView::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 			// 이제 OwnerPawn을 통해 회전 값을 전달합니다.
 			if (MouseX < LeftThreshold)
 			{
-				OwnerPawn->AddControllerYawInput(-1.0f * DeltaTime * 100.0f);
+				FVector RightVector = GetOwner()->GetActorRightVector();
+				OwnerPawn->AddMovementInput(-RightVector, 1.0f); 
 			}
 			else if (MouseX > RightThreshold)
 			{
-				OwnerPawn->AddControllerYawInput(1.0f * DeltaTime * 100.0f);
+				FVector RightVector = GetOwner()->GetActorRightVector();
+				OwnerPawn->AddMovementInput(RightVector, 1.0f);
 			}
 		}
 	}
