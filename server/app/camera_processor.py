@@ -1,265 +1,284 @@
 # ============================================================================
-# 카메라 및 MediaPipe 처리 모듈
-# 역할: 별도 스레드에서 카메라 프레임 읽기, MediaPipe 손 인식, 결과 저장
+# 카메라 처리기
+# 역할: 서버가 카메라를 직접 읽고 MediaPipe를 처리한 뒤,
+#       최소 JSON(x, y, gesture)만 최신 상태로 저장
 # ============================================================================
 
-import cv2
-import mediapipe as mp
+from __future__ import annotations
+
 import logging
 import math
+import os
+import threading
 import time
-from typing import Dict, Any, Optional, Tuple
-from threading import Thread, Lock
-import numpy as np
+from pathlib import Path
+from typing import Any
+
+import cv2
+
+try:
+    import mediapipe as mp
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision
+except Exception:
+    mp = None
+    mp_python = None
+    vision = None
+
 
 logger = logging.getLogger(__name__)
 
-# MediaPipe 설정
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
+# grab 판정을 위한 랜드마크 인덱스
+THUMB_TIP = 4
+INDEX_TIP = 8
 
-# 랜드마크 인덱스
-THUMB_TIP = 4      # 엄지 끝
-INDEX_TIP = 8      # 검지 끝
-MIDDLE_TIP = 12    # 중지 끝
-RING_TIP = 16      # 약지 끝
-PINKY_TIP = 20     # 소지 끝
-WRIST = 0          # 손목
+# 손바닥 중심(palm center) 계산에 사용할 랜드마크 인덱스
+PALM_CENTER_INDEXES = (0, 5, 9, 13, 17)
 
-# 임계값
-PINCH_DISTANCE_THRESHOLD = 0.05
+# 엄지 끝(4)과 검지 끝(8) 사이 2D 거리 임계값
+GRAB_THRESHOLD = 0.05
 
 
 class CameraProcessor:
+    """서버 내부 단일 카메라 파이프라인.
+
+    - 카메라는 이 클래스에서만 1회 오픈
+    - 최신 결과는 최소 JSON으로 유지
+    - 필요 시 로컬 OpenCV preview 창 표시
     """
-    카메라 프레임을 읽고 MediaPipe로 손을 인식하는 클래스
-    별도 스레드에서 실행되며, 최신 손 정보를 저장합니다.
-    """
-    
-    def __init__(self, camera_id: int = 0):
-        """
-        CameraProcessor 초기화
-        
-        Args:
-            camera_id: 사용할 카메라 ID (기본값: 0 = 웹캠)
-        """
+
+    def __init__(self, camera_id: int = 0, show_preview: bool = False):
         self.camera_id = camera_id
-        self.cap = None
-        self.hands = None
-        self.is_running = False
-        self.thread = None
-        
-        # 최신 손 정보 저장 (스레드 안전성을 위해 Lock 사용)
-        self.lock = Lock()
-        self.latest_payload: Optional[Dict[str, Any]] = None
-        self.frame_count = 0
-        
-    def start(self):
-        """카메라 처리 시작"""
-        if self.is_running:
-            logger.warning("CameraProcessor 이미 실행 중입니다.")
-            return
-        
-        try:
-            # 카메라 초기화
-            self.cap = cv2.VideoCapture(self.camera_id)
-            if not self.cap.isOpened():
-                logger.error(f"카메라 {self.camera_id} 열기 실패")
-                return
-            
-            # 카메라 설정
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-            self.cap.set(cv2.CAP_PROP_FPS, 30)
-            
-            # MediaPipe 초기화
-            self.hands = mp_hands.Hands(
-                static_image_mode=False,
-                max_num_hands=1,
-                min_detection_confidence=0.7,
-                min_tracking_confidence=0.5
-            )
-            
-            self.is_running = True
-            
-            # 별도 스레드에서 실행
-            self.thread = Thread(target=self._process_frames, daemon=True)
-            self.thread.start()
-            
-            logger.info("✓ CameraProcessor 시작됨")
-            
-        except Exception as e:
-            logger.error(f"CameraProcessor 시작 실패: {e}")
-            self.is_running = False
-    
-    def stop(self):
-        """카메라 처리 중지"""
-        self.is_running = False
-        
-        if self.thread:
-            self.thread.join(timeout=5)
-        
+        self.show_preview = show_preview
+
+        self.cap: cv2.VideoCapture | None = None
+        self.thread: threading.Thread | None = None
+        self.running = False
+        self.lock = threading.Lock()
+
+        self.hand_landmarker: Any | None = None
+        self.mp_init_error: str | None = None
+
+        # 항상 동일한 최소 JSON 형태 유지
+        self.latest_result: dict[str, float | str | None] = {
+            "x": None,
+            "y": None,
+            "gesture": "none",
+        }
+
+        self._init_hand_landmarker()
+
+    def start(self) -> bool:
+        """카메라 처리 스레드를 시작합니다. 실패 시 False를 반환합니다."""
+        if self.running:
+            return True
+
+        # Windows 호환성에서 CAP_DSHOW가 안정적인 경우가 많아 우선 사용
+        self.cap = cv2.VideoCapture(self.camera_id, cv2.CAP_DSHOW)
+
+        if not self.cap.isOpened():
+            logger.error("카메라를 열 수 없습니다. camera_id=%s", self.camera_id)
+            self.cap.release()
+            self.cap = None
+            return False
+
+        self.running = True
+        self.thread = threading.Thread(target=self._process_loop, daemon=True)
+        self.thread.start()
+        logger.info("[CameraProcessor] started (camera_id=%s, preview=%s)", self.camera_id, self.show_preview)
+        return True
+
+    def stop(self) -> None:
+        """카메라 처리 스레드를 종료합니다."""
+        self.running = False
+
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=2.0)
+
         if self.cap:
             self.cap.release()
-        
-        if self.hands:
-            self.hands.close()
-        
-        logger.info("✓ CameraProcessor 중지됨")
-    
-    def _process_frames(self):
-        """
-        별도 스레드에서 카메라 프레임을 계속 처리합니다.
-        """
-        logger.info("프레임 처리 시작")
-        
-        while self.is_running:
+            self.cap = None
+
+        if self.show_preview:
             try:
-                ret, frame = self.cap.read()
-                if not ret:
-                    logger.error("프레임 읽기 실패")
-                    break
-                
-                # BGR을 RGB로 변환 (MediaPipe는 RGB 사용)
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                
-                # MediaPipe 처리
-                result = self.hands.process(rgb_frame)
-                
-                # 페이로드 추출
-                frame_time = time.time()
-                payload = self._extract_payload(result, frame_time)
-                
-                # 스레드 안전하게 저장
-                with self.lock:
-                    self.latest_payload = payload
-                    self.frame_count += 1
-                
-                # 시각화 (선택사항 - 불필요하면 제거 가능)
-                # annotated_frame = self._draw_frame_info(frame, result, payload)
-                
-            except Exception as e:
-                logger.error(f"프레임 처리 중 에러: {e}")
-        
-        logger.info("프레임 처리 종료")
-    
-    def get_latest_payload(self) -> Optional[Dict[str, Any]]:
-        """
-        최신 손 정보를 반환합니다.
-        
-        Returns:
-            dict: 손 정보 페이로드 또는 None
-        """
+                cv2.destroyWindow("Server Camera Preview")
+            except Exception:
+                pass
+
+        if self.hand_landmarker and hasattr(self.hand_landmarker, "close"):
+            self.hand_landmarker.close()
+
+        logger.info("[CameraProcessor] stopped")
+
+    def get_latest_result(self) -> dict[str, float | str | None]:
+        """최신 최소 JSON 결과를 안전하게 복사해 반환합니다."""
         with self.lock:
-            return self.latest_payload
-    
-    def _extract_payload(self, result, frame_time: float) -> Dict[str, Any]:
-        """
-        MediaPipe 결과를 JSON 페이로드로 변환합니다.
-        
-        Args:
-            result: MediaPipe Hands 처리 결과
-            frame_time: 프레임 타임스탐프
-        
-        Returns:
-            dict: 손 정보 페이로드
-        """
-        # 손이 감지되지 않은 경우
-        if not result.multi_hand_landmarks:
-            return {
-                "hand_detected": False,
-                "gesture": "none",
-                "index_tip": None,
-                "thumb_tip": None,
-                "landmarks": None,
-                "timestamp": frame_time,
-            }
-        
-        # 첫 번째 손만 사용 (한 손 추적)
-        hand = result.multi_hand_landmarks[0]
-        
-        # 제스처 판정
-        gesture = self._detect_gesture(hand)
-        
-        # 엄지 끝과 검지 끝의 좌표
-        index_tip = hand.landmark[INDEX_TIP]
-        thumb_tip = hand.landmark[THUMB_TIP]
-        
-        # 모든 랜드마크 좌표 (21개 점)
-        landmarks = [
-            {"x": lm.x, "y": lm.y}
-            for lm in hand.landmark
-        ]
-        
-        # 페이로드 구성
-        payload = {
-            "hand_detected": True,
-            "gesture": gesture,
-            "index_tip": {"x": index_tip.x, "y": index_tip.y},
-            "thumb_tip": {"x": thumb_tip.x, "y": thumb_tip.y},
-            "landmarks": landmarks,
-            "timestamp": frame_time,
+            return dict(self.latest_result)
+
+    def _process_loop(self) -> None:
+        """카메라 프레임을 반복 처리하고 최신 결과를 갱신합니다."""
+        while self.running:
+            if self.cap is None:
+                self._set_no_hand()
+                time.sleep(0.03)
+                continue
+
+            if self.hand_landmarker is None:
+                # 모델이 없거나 초기화 실패해도 서버는 계속 살아있게 유지
+                self._set_no_hand()
+                time.sleep(0.10)
+                continue
+
+            ok, frame = self.cap.read()
+            if not ok or frame is None:
+                logger.warning("카메라 프레임 읽기 실패")
+                self._set_no_hand()
+                time.sleep(0.03)
+                continue
+
+            try:
+                frame = cv2.flip(frame, 1)
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                detection_result = self.hand_landmarker.detect(mp_image)
+
+                parsed = self._build_minimal_result(detection_result)
+                with self.lock:
+                    self.latest_result = parsed
+
+                if self.show_preview:
+                    self._draw_preview(frame, parsed)
+
+            except Exception as e:
+                logger.exception("프레임 처리 중 에러: %s", e)
+                self._set_no_hand()
+
+            # 카메라/추론 루프 목표: 약 30fps
+            time.sleep(0.03)
+
+    def _build_minimal_result(self, detection_result: Any) -> dict[str, float | str | None]:
+        """MediaPipe 결과를 최소 JSON으로 변환합니다.
+
+        반환 형식:
+        {
+            "x": float | None,
+            "y": float | None,
+            "gesture": "grab" | "none"
         }
-        
-        return payload
-    
-    def _detect_gesture(self, hand_landmarks) -> str:
         """
-        손의 랜드마크를 기반으로 제스처를 판정합니다.
-        
-        Args:
-            hand_landmarks: MediaPipe 손 랜드마크
-        
-        Returns:
-            str: "pinch" 또는 "open"
-        """
-        thumb_tip = hand_landmarks.landmark[THUMB_TIP]
-        index_tip = hand_landmarks.landmark[INDEX_TIP]
-        
-        # 거리 계산
-        distance = self._calculate_distance(
-            (thumb_tip.x, thumb_tip.y),
-            (index_tip.x, index_tip.y)
-        )
-        
-        # 거리에 따라 제스처 판정
-        if distance < PINCH_DISTANCE_THRESHOLD:
-            return "pinch"
-        else:
-            return "open"
-    
-    @staticmethod
-    def _calculate_distance(point1: Tuple[float, float], point2: Tuple[float, float]) -> float:
-        """두 점 사이의 거리 계산"""
-        dx = point1[0] - point2[0]
-        dy = point1[1] - point2[1]
-        return math.sqrt(dx * dx + dy * dy)
-    
-    def _draw_frame_info(self, frame, result, payload: Dict[str, Any]):
-        """프레임에 손 정보 시각화 (선택사항)"""
-        if not payload["hand_detected"]:
-            return frame
-        
-        h, w, c = frame.shape
-        
-        if result.multi_hand_landmarks:
-            hand = result.multi_hand_landmarks[0]
-            mp_draw.draw_landmarks(
-                frame,
-                hand,
-                mp_hands.HAND_CONNECTIONS,
-                mp_draw.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
-                mp_draw.DrawingSpec(color=(255, 0, 0), thickness=1)
-            )
-        
+        hand_list = getattr(detection_result, "hand_landmarks", None)
+        if not hand_list:
+            return {"x": None, "y": None, "gesture": "none"}
+
+        hand = hand_list[0]
+        if len(hand) <= INDEX_TIP:
+            return {"x": None, "y": None, "gesture": "none"}
+
+        # 손바닥 중심 = (0,5,9,13,17)의 x,y 평균
+        sum_x = 0.0
+        sum_y = 0.0
+        for idx in PALM_CENTER_INDEXES:
+            lm = hand[idx]
+            sum_x += float(lm.x)
+            sum_y += float(lm.y)
+
+        center_x = sum_x / len(PALM_CENTER_INDEXES)
+        center_y = sum_y / len(PALM_CENTER_INDEXES)
+
+        # grab 판정: 엄지 끝(4) - 검지 끝(8) 거리
+        thumb = hand[THUMB_TIP]
+        index = hand[INDEX_TIP]
+        dist = math.hypot(float(thumb.x) - float(index.x), float(thumb.y) - float(index.y))
+        gesture = "grab" if dist < GRAB_THRESHOLD else "none"
+
+        return {
+            "x": round(center_x, 4),
+            "y": round(center_y, 4),
+            "gesture": gesture,
+        }
+
+    def _draw_preview(self, frame: Any, result: dict[str, float | str | None]) -> None:
+        """서버 로컬 미리보기 창을 표시합니다. (원격 전송 없음)"""
+        x = result.get("x")
+        y = result.get("y")
+        gesture = str(result.get("gesture", "none"))
+
+        if isinstance(x, float) and isinstance(y, float):
+            h, w = frame.shape[:2]
+            cx = int(x * w)
+            cy = int(y * h)
+            cv2.circle(frame, (cx, cy), 8, (0, 255, 0), -1)
+
         cv2.putText(
             frame,
-            f"Gesture: {payload['gesture']}",
-            (50, 50),
+            f"Gesture: {gesture}",
+            (20, 40),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1.2,
-            (0, 255, 0),
-            2
+            1.0,
+            (0, 255, 0) if gesture == "grab" else (200, 200, 200),
+            2,
         )
-        
-        return frame
+
+        cv2.imshow("Server Camera Preview", frame)
+        cv2.waitKey(1)
+
+    def _init_hand_landmarker(self) -> None:
+        """MediaPipe HandLandmarker를 초기화합니다."""
+        if mp is None or mp_python is None or vision is None:
+            self.mp_init_error = "mediapipe import 실패. requirements 설치 상태를 확인하세요."
+            logger.error(self.mp_init_error)
+            return
+
+        model_path = self._resolve_model_path()
+        if model_path is None:
+            self.mp_init_error = (
+                "hand_landmarker.task 파일을 찾을 수 없습니다. "
+                "client/models 또는 환경변수 MEDIAPIPE_HAND_MODEL 경로를 확인하세요."
+            )
+            logger.error(self.mp_init_error)
+            return
+
+        options = vision.HandLandmarkerOptions(
+            base_options=mp_python.BaseOptions(model_asset_path=str(model_path)),
+            num_hands=1,
+            min_hand_detection_confidence=0.7,
+            min_hand_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
+        )
+
+        try:
+            self.hand_landmarker = vision.HandLandmarker.create_from_options(options)
+            logger.info("MediaPipe HandLandmarker 초기화 완료: %s", model_path)
+        except Exception as e:
+            self.mp_init_error = f"HandLandmarker 초기화 실패: {e}"
+            logger.error(self.mp_init_error)
+
+    def _resolve_model_path(self) -> Path | None:
+        """가능한 경로에서 hand_landmarker.task를 찾습니다."""
+        model_env = os.getenv("MEDIAPIPE_HAND_MODEL")
+        if model_env:
+            env_path = Path(model_env)
+            if env_path.is_file():
+                return env_path
+
+        root = Path(__file__).resolve().parents[2]
+        candidates = [
+            root / "models" / "hand_landmarker.task",
+            root / "client" / "models" / "hand_landmarker.task",
+            root / "server" / "models" / "hand_landmarker.task",
+        ]
+
+        for path in candidates:
+            if path.is_file():
+                return path
+
+        return None
+
+    def _set_no_hand(self) -> None:
+        """손 미검출 기본값으로 최신 결과를 갱신합니다."""
+        with self.lock:
+            self.latest_result = {
+                "x": None,
+                "y": None,
+                "gesture": "none",
+            }
