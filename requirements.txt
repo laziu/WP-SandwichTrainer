@@ -1,0 +1,19 @@
+# FastAPI 및 WebSocket 서버
+fastapi==0.109.0
+uvicorn==0.27.0
+pydantic==2.5.0
+python-multipart==0.0.7
+
+# MediaPipe AI 환상 인식
+mediapipe==0.10.8
+
+# 비동기 프로그래밍
+websockets==12.0
+asyncio-contextmanager==1.0.0
+
+# 컴퓨터 비전
+opencv-contrib-python==4.9.0.80
+
+# 선택사항: 개발 도구
+pytest==7.4.4
+black==23.12.1
