@@ -3,10 +3,10 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-import config
-from schemas.request import SandwichResult
-from schemas.response import FeedbackResponse
-from services.recipe import get_recipe
+from LLM import config
+from LLM.schemas.request import SandwichResult
+from LLM.schemas.response import FeedbackResponse
+from LLM.services.recipe import get_recipe
 
 client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 

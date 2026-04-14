@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -15,7 +17,7 @@ class SandwichError(BaseModel):
 
 
 class SandwichResult(BaseModel):
-    type: str = "sandwich_result"
+    type: Literal["sandwich_result"] = "sandwich_result"
     session_id: str
     recipe_id: str
     score: int
