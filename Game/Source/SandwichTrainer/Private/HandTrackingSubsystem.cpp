@@ -7,8 +7,8 @@
 
 namespace
 {
-	const FString HandTrackingServerURL = TEXT("ws://172.16.30.66:8888/ws/hand");
-	const FString FeedbackServerURL = TEXT("ws://172.16.30.160:8000/ws");
+	const FString HandTrackingServerURL = TEXT("ws://172.16.15.106:8888/ws/hand");
+	const FString FeedbackServerURL = TEXT("ws://172.16.15.75:8000/ws");
 }
 
 void UHandTrackingSubsystem::Initialize(FSubsystemCollectionBase& Collection)

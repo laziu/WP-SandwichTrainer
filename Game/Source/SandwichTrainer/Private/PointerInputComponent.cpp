@@ -80,10 +80,12 @@ void UPointerInputComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 				float MouseX, MouseY;
 				if (PC->GetMousePosition(MouseX, MouseY))
 				{
-					if (CanvasSizeX > 0.f && CanvasSizeY > 0.f)
+					int32 ViewX, ViewY;
+					PC->GetViewportSize(ViewX, ViewY);
+					if (ViewX > 0 && ViewY > 0)
 					{
-						X = MouseX / CanvasSizeX;
-						Y = MouseY / CanvasSizeY;
+						X = MouseX / ViewX;
+						Y = MouseY / ViewY;
 					}
 				}
 			}
