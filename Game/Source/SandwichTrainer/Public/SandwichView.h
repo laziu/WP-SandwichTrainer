@@ -6,6 +6,8 @@
 #include "Components/ActorComponent.h"
 #include "SandwichView.generated.h"
 
+class UPointerInputComponent;
+
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class SANDWICHTRAINER_API USandwichView : public UActorComponent
@@ -24,4 +26,8 @@ public:
 	// Called every frame
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
+
+private:
+	UPROPERTY()
+	TObjectPtr<UPointerInputComponent> PointerInput;
 };

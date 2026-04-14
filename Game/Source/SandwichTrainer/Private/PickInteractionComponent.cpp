@@ -2,12 +2,11 @@
 
 #include "PickInteractionComponent.h"
 
-#include "EnhancedInputComponent.h"
-#include "InputAction.h"
+#include "PointerInputComponent.h"
 #include "UserExtension.h"
-#include "Interface/Pickable.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Interface/Pickable.h"
 
 UPickInteractionComponent::UPickInteractionComponent()
 {
@@ -17,46 +16,59 @@ UPickInteractionComponent::UPickInteractionComponent()
 void UPickInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
-}
 
-// ─── Input ───────────────────────────────────────────────────────────────────
-
-void UPickInteractionComponent::SetupInputBindings(UEnhancedInputComponent* EIC)
-{
-	if (!ClickAction)
+	PointerInput = GetOwner()->FindComponentByClass<UPointerInputComponent>();
+	if (PointerInput)
 	{
-		LOGW(TEXT("No ClickAction assigned to %s"), *GetName());
-		return;
+		PointerInput->OnClickStarted.AddUObject(this, &UPickInteractionComponent::OnClickStarted);
+		PointerInput->OnClickCompleted.AddUObject(this, &UPickInteractionComponent::OnClickCompleted);
 	}
-
-	EIC->BindAction(ClickAction, ETriggerEvent::Started, this, &UPickInteractionComponent::OnClickStarted);
-	EIC->BindAction(ClickAction, ETriggerEvent::Completed, this, &UPickInteractionComponent::OnClickCompleted);
+	else
+	{
+		LOGW(TEXT("PointerInputComponent not found on %s"), *GetOwner()->GetName());
+	}
 }
 
-void UPickInteractionComponent::OnClickStarted(const FInputActionValue& Value)
+// ─── Click ────────────────────────────────────────────────────────────────────
+
+void UPickInteractionComponent::OnClickStarted()
 {
 	LOGW(TEXT("OnClickStarted"));
 	TryPickActor();
 }
 
-void UPickInteractionComponent::OnClickCompleted(const FInputActionValue& Value)
+void UPickInteractionComponent::OnClickCompleted()
 {
 	LOGW(TEXT("OnClickCompleted"));
 	Drop();
+}
+
+// ─── World Ray ────────────────────────────────────────────────────────────────
+
+bool UPickInteractionComponent::GetWorldRay(FVector& OutLocation, FVector& OutDirection) const
+{
+	if (!PointerInput) return false;
+
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn) return false;
+
+	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
+	if (!PC) return false;
+
+	int32 ViewX, ViewY;
+	PC->GetViewportSize(ViewX, ViewY);
+	return PC->DeprojectScreenPositionToWorld(
+		PointerInput->X * ViewX,
+		PointerInput->Y * ViewY,
+		OutLocation, OutDirection);
 }
 
 // ─── Pick ─────────────────────────────────────────────────────────────────────
 
 void UPickInteractionComponent::TryPickActor()
 {
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn) return;
-
-	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
-	if (!PC) return;
-
 	FVector WorldLocation, WorldDirection;
-	if (!PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection)) return;
+	if (!GetWorldRay(WorldLocation, WorldDirection)) return;
 
 	FHitResult HitResult;
 	FCollisionQueryParams Params;
@@ -72,11 +84,25 @@ void UPickInteractionComponent::TryPickActor()
 
 	// 집기 전 상태 저장
 	OriginalScale = HitActor->GetActorScale3D();
-	if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(HitActor->GetRootComponent()))
+	HeldPrimComp = nullptr;
+	bOriginalSimulatesPhysics = false;
+
+	TArray<UPrimitiveComponent*> PrimComps;
+	HitActor->GetComponents<UPrimitiveComponent>(PrimComps);
+	for (UPrimitiveComponent* Comp : PrimComps)
 	{
-		bOriginalSimulatesPhysics = PrimComp->IsSimulatingPhysics();
-		PrimComp->SetSimulatePhysics(false);
+		if (!Comp->IsSimulatingPhysics()) continue;
+
+		// 물리 비활성화 및 속도 초기화
+		Comp->SetSimulatePhysics(false);
+		Comp->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		Comp->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+
+		HeldPrimComp = Comp;
+		bOriginalSimulatesPhysics = true;
+		break;
 	}
+
 	HitActor->SetActorEnableCollision(false);
 
 	// 지정된 배율로 스케일 축소
@@ -99,16 +125,10 @@ void UPickInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 
 	if (!HeldActor.IsValid()) return;
 
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn) return;
-
-	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
-	if (!PC) return;
-
 	FVector WorldLocation, WorldDirection;
-	if (!PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection)) return;
+	if (!GetWorldRay(WorldLocation, WorldDirection)) return;
 
-	// 1. 마우스를 따라 고정 거리에서 물체 이동
+	// 1. 커서 위치를 따라 고정 거리에서 물체 이동
 	const FVector NewLocation = WorldLocation + WorldDirection * HoldDistance;
 	HeldActor->SetActorLocation(NewLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
@@ -150,10 +170,10 @@ void UPickInteractionComponent::Drop()
 
 	// 충돌/물리 복원
 	Actor->SetActorEnableCollision(true);
-	if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
-	{
-		PrimComp->SetSimulatePhysics(bOriginalSimulatesPhysics);
-	}
+	if (HeldPrimComp.IsValid() && bOriginalSimulatesPhysics)
+		HeldPrimComp->SetSimulatePhysics(true);
+	HeldPrimComp = nullptr;
+	bOriginalSimulatesPhysics = false;
 
 	IPickable::Execute_OnDropped(Actor, LastValidDropLocation);
 

@@ -4,11 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Interface/InputBindable.h"
 #include "PickInteractionComponent.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class SANDWICHTRAINER_API UPickInteractionComponent : public UActorComponent, public IInputBindable
+class SANDWICHTRAINER_API UPickInteractionComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
@@ -18,15 +17,8 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 	                           FActorComponentTickFunction* ThisTickFunction) override;
 
-	// IInputBindable
-	virtual void SetupInputBindings(class UEnhancedInputComponent* EIC) override;
-
 protected:
 	virtual void BeginPlay() override;
-
-	// 마우스 클릭 Input Action — BP에서 할당
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Input)
-	TObjectPtr<class UInputAction> ClickAction;
 
 	// 카메라로부터 물체를 유지할 거리 (cm)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category=Pick)
@@ -41,19 +33,25 @@ protected:
 	float HoldScaleMultiplier = 0.3f;
 
 private:
-	void OnClickStarted(const struct FInputActionValue& Value);
-	void OnClickCompleted(const struct FInputActionValue& Value);
+	void OnClickStarted();
+	void OnClickCompleted();
 
 	void TryPickActor();
 	void Drop();
+
+	bool GetWorldRay(FVector& OutLocation, FVector& OutDirection) const;
 
 	TWeakObjectPtr<AActor> HeldActor;
 
 	// 집기 전 상태 저장
 	FVector OriginalScale = FVector::OneVector;
+	TWeakObjectPtr<UPrimitiveComponent> HeldPrimComp;
 	bool bOriginalSimulatesPhysics = false;
 
 	// 드롭 위치
 	FVector LastValidDropLocation = FVector::ZeroVector;
 	bool bHasValidDropLocation = false;
+
+	UPROPERTY()
+	TObjectPtr<class UPointerInputComponent> PointerInput;
 };

@@ -2,6 +2,8 @@
 
 
 #include "SandwichView.h"
+#include "PointerInputComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -22,8 +24,8 @@ void USandwichView::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// ...
-	// 1. 현재 게임의 플레이어 컨트롤러를 가져옵니다.
+	PointerInput = GetOwner()->FindComponentByClass<UPointerInputComponent>();
+
 	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
 
 	if (PC)
@@ -37,11 +39,10 @@ void USandwichView::BeginPlay()
 		FInputModeGameAndUI InputMode;
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		InputMode.SetHideCursorDuringCapture(false);
-		
+
 		PC->SetInputMode(InputMode);
 	}
 }
-	
 
 
 // Called every frame
@@ -49,34 +50,19 @@ void USandwichView::TickComponent(float DeltaTime, ELevelTick TickType, FActorCo
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ...
-	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
-	// GetOwner를 APawn으로 형변환(Cast)해서 사용해야 합니다.
+	if (!PointerInput) return;
+
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn) return;
 
-	if (PC && OwnerPawn)
+	const float X = PointerInput->X;
+
+	if (X < 0.1f)
 	{
-		float MouseX, MouseY;
-		if (PC->GetMousePosition(MouseX, MouseY))
-		{
-			int32 ViewportWidth, ViewportHeight;
-			PC->GetViewportSize(ViewportWidth, ViewportHeight);
-
-			float LeftThreshold = ViewportWidth * 0.1f;
-			float RightThreshold = ViewportWidth * 0.9f;
-
-			// 이제 OwnerPawn을 통해 회전 값을 전달합니다.
-			if (MouseX < LeftThreshold)
-			{
-				FVector RightVector = GetOwner()->GetActorRightVector();
-				OwnerPawn->AddMovementInput(-RightVector, 1.0f); 
-			}
-			else if (MouseX > RightThreshold)
-			{
-				FVector RightVector = GetOwner()->GetActorRightVector();
-				OwnerPawn->AddMovementInput(RightVector, 1.0f);
-			}
-		}
+		OwnerPawn->AddMovementInput(-GetOwner()->GetActorRightVector(), 1.0f);
+	}
+	else if (X > 0.9f)
+	{
+		OwnerPawn->AddMovementInput(GetOwner()->GetActorRightVector(), 1.0f);
 	}
 }
-
