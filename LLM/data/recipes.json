@@ -1,0 +1,90 @@
+{
+  "italian_bmt": {
+    "name": "이탈리안 비엠티",
+    "ingredients": [
+      "bread_choice",
+      "pepperoni",
+      "salami",
+      "ham",
+      "vegetable_choice",
+      "sauce_choice"
+    ],
+    "order": [
+      "bread_bottom",
+      "pepperoni",
+      "salami",
+      "ham",
+      "vegetable_choice",
+      "sauce_choice",
+      "bread_top"
+    ]
+  },
+  "tuna": {
+    "name": "참치",
+    "ingredients": [
+      "bread_choice",
+      "tuna",
+      "mayonnaise",
+      "vegetable_choice",
+      "sauce_choice"
+    ],
+    "order": [
+      "bread_bottom",
+      "tuna",
+      "mayonnaise",
+      "vegetable_choice",
+      "sauce_choice",
+      "bread_top"
+    ]
+  },
+  "ham": {
+    "name": "햄",
+    "ingredients": [
+      "bread_choice",
+      "ham",
+      "vegetable_choice",
+      "sauce_choice"
+    ],
+    "order": [
+      "bread_bottom",
+      "ham",
+      "vegetable_choice",
+      "sauce_choice",
+      "bread_top"
+    ]
+  },
+  "egg_mayo": {
+    "name": "에그마요",
+    "ingredients": [
+      "bread_choice",
+      "egg",
+      "mayonnaise",
+      "vegetable_choice",
+      "sauce_choice"
+    ],
+    "order": [
+      "bread_bottom",
+      "egg",
+      "mayonnaise",
+      "vegetable_choice",
+      "sauce_choice",
+      "bread_top"
+    ]
+  },
+  "blt": {
+    "name": "비엘티",
+    "ingredients": [
+      "bread_choice",
+      "bacon",
+      "vegetable_choice",
+      "sauce_choice"
+    ],
+    "order": [
+      "bread_bottom",
+      "bacon",
+      "vegetable_choice",
+      "sauce_choice",
+      "bread_top"
+    ]
+  }
+}
