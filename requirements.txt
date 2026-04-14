@@ -4,8 +4,8 @@ uvicorn==0.27.0
 pydantic==2.5.0
 python-multipart==0.0.7
 
-# MediaPipe AI 환상 인식
-mediapipe==0.10.8
+# MediaPipe AI 손 인식
+mediapipe==0.10.33
 
 # 비동기 프로그래밍
 websockets==12.0

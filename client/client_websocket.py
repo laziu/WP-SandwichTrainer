@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SERVER_URL = "ws://127.0.0.1:8888"
-ENDPOINT_STREAM = f"{SERVER_URL}/ws/hand/stream"
+ENDPOINT_STREAM = f"{SERVER_URL}/ws/hand"
 
 
 async def client_websocket_stream():
