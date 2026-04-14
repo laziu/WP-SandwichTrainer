@@ -117,7 +117,7 @@ void UPointerInputComponent::HandleClickCompleted()
 
 void UPointerInputComponent::OnHandDataReceived(const FHandData& Data)
 {
-	if (!bUseMouse)
+	if (!bUseMouse && Data.X > 0.f && Data.Y > 0.f)
 	{
 		X = Data.X;
 		Y = Data.Y;
