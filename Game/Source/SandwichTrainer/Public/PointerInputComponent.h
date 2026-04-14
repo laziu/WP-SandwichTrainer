@@ -27,8 +27,8 @@ public:
 	void SetUseMouse(bool bNewUseMouse);
 
 	// 정규화 화면 좌표 (0~1)
-	float X = 0.f;
-	float Y = 0.f;
+	float X = 0.5f;
+	float Y = 0.5f;
 
 	bool bGrabbing = false;
 
@@ -54,4 +54,8 @@ private:
 	TObjectPtr<UHandTrackingSubsystem> HandSubsystem;
 
 	FHandData LastHandData;
+
+	// DrawPointerCircle에서 갱신 — 마우스 정규화와 드로잉이 같은 기준을 사용
+	float CanvasSizeX = 1920.f;
+	float CanvasSizeY = 1080.f;
 };
