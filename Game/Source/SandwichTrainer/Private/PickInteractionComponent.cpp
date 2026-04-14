@@ -165,7 +165,7 @@ void UPickInteractionComponent::Drop()
 		const FBox Bounds = Actor->GetComponentsBoundingBox(true);
 		const float BottomOffset = Actor->GetActorLocation().Z - Bounds.Min.Z;
 		const FVector FinalLocation = LastValidDropLocation + FVector(0.f, 0.f, BottomOffset);
-		Actor->SetActorLocation(FinalLocation, false, nullptr, ETeleportType::TeleportPhysics);
+		Actor->SetActorLocation(FinalLocation, true, nullptr, ETeleportType::None);
 	}
 
 	// 충돌/물리 복원
