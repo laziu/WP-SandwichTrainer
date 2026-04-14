@@ -84,11 +84,25 @@ void UPickInteractionComponent::TryPickActor()
 
 	// 집기 전 상태 저장
 	OriginalScale = HitActor->GetActorScale3D();
-	if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(HitActor->GetRootComponent()))
+	HeldPrimComp = nullptr;
+	bOriginalSimulatesPhysics = false;
+
+	TArray<UPrimitiveComponent*> PrimComps;
+	HitActor->GetComponents<UPrimitiveComponent>(PrimComps);
+	for (UPrimitiveComponent* Comp : PrimComps)
 	{
-		bOriginalSimulatesPhysics = PrimComp->IsSimulatingPhysics();
-		PrimComp->SetSimulatePhysics(false);
+		if (!Comp->IsSimulatingPhysics()) continue;
+
+		// 물리 비활성화 및 속도 초기화
+		Comp->SetSimulatePhysics(false);
+		Comp->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		Comp->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+
+		HeldPrimComp = Comp;
+		bOriginalSimulatesPhysics = true;
+		break;
 	}
+
 	HitActor->SetActorEnableCollision(false);
 
 	// 지정된 배율로 스케일 축소
@@ -156,10 +170,10 @@ void UPickInteractionComponent::Drop()
 
 	// 충돌/물리 복원
 	Actor->SetActorEnableCollision(true);
-	if (UPrimitiveComponent* PrimComp = Cast<UPrimitiveComponent>(Actor->GetRootComponent()))
-	{
-		PrimComp->SetSimulatePhysics(bOriginalSimulatesPhysics);
-	}
+	if (HeldPrimComp.IsValid() && bOriginalSimulatesPhysics)
+		HeldPrimComp->SetSimulatePhysics(true);
+	HeldPrimComp = nullptr;
+	bOriginalSimulatesPhysics = false;
 
 	IPickable::Execute_OnDropped(Actor, LastValidDropLocation);
 

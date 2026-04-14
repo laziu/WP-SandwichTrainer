@@ -45,6 +45,7 @@ private:
 
 	// 집기 전 상태 저장
 	FVector OriginalScale = FVector::OneVector;
+	TWeakObjectPtr<UPrimitiveComponent> HeldPrimComp;
 	bool bOriginalSimulatesPhysics = false;
 
 	// 드롭 위치
