@@ -5,6 +5,9 @@
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
 #include "UserExtension.h"
+#include "Engine/Canvas.h"
+#include "CanvasItem.h"
+#include "GameFramework/HUD.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 
@@ -21,6 +24,14 @@ void UPointerInputComponent::BeginPlay()
 	{
 		HandSubsystem = GI->GetSubsystem<UHandTrackingSubsystem>();
 		HandSubsystem->OnHandDataReceived.AddUObject(this, &UPointerInputComponent::OnHandDataReceived);
+	}
+
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		if (AHUD* HUD = PC->GetHUD())
+		{
+			HUD->OnHUDPostRender.AddUObject(this, &UPointerInputComponent::DrawPointerCircle);
+		}
 	}
 }
 
@@ -69,12 +80,10 @@ void UPointerInputComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 				float MouseX, MouseY;
 				if (PC->GetMousePosition(MouseX, MouseY))
 				{
-					int32 ViewX, ViewY;
-					PC->GetViewportSize(ViewX, ViewY);
-					if (ViewX > 0 && ViewY > 0)
+					if (CanvasSizeX > 0.f && CanvasSizeY > 0.f)
 					{
-						X = MouseX / ViewX;
-						Y = MouseY / ViewY;
+						X = MouseX / CanvasSizeX;
+						Y = MouseY / CanvasSizeY;
 					}
 				}
 			}
@@ -104,7 +113,7 @@ void UPointerInputComponent::HandleClickCompleted()
 
 void UPointerInputComponent::OnHandDataReceived(const FHandData& Data)
 {
-	if (!bUseMouse)
+	if (!bUseMouse && Data.X > 1e-3 && Data.Y > 1e-3)
 	{
 		X = Data.X;
 		Y = Data.Y;
@@ -119,7 +128,36 @@ void UPointerInputComponent::OnHandDataReceived(const FHandData& Data)
 			bGrabbing = false;
 			OnClickCompleted.Broadcast();
 		}
+		LastHandData = Data;
 	}
+}
 
-	LastHandData = Data;
+// ─── HUD Draw ─────────────────────────────────────────────────────────────────
+
+void UPointerInputComponent::DrawPointerCircle(AHUD* HUD, UCanvas* Canvas)
+{
+	if (bUseMouse || !Canvas) return;
+
+	constexpr float Radius = 8.f;
+	constexpr int32 Segments = 4;
+
+	// ClipX/ClipY = HUD 드로잉의 실제 뷰포트 영역 (SizeX/Y는 DPI 스케일 등이 반영된 전체 캔버스 크기)
+	CanvasSizeX = Canvas->ClipX;
+	CanvasSizeY = Canvas->ClipY;
+
+	const float CX = X * CanvasSizeX;
+	const float CY = Y * CanvasSizeY;
+
+	for (int32 i = 0; i < Segments; i++)
+	{
+		const float A0 = (2.f * PI * i) / Segments;
+		const float A1 = (2.f * PI * (i + 1)) / Segments;
+
+		FCanvasLineItem Line(
+			FVector2D(CX + Radius * FMath::Cos(A0), CY + Radius * FMath::Sin(A0)),
+			FVector2D(CX + Radius * FMath::Cos(A1), CY + Radius * FMath::Sin(A1)));
+		Line.LineThickness = 2.f;
+		Line.SetColor(FLinearColor::Green);
+		Canvas->DrawItem(Line);
+	}
 }
