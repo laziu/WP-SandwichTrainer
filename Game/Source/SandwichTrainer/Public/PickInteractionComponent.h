@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "HandTrackingSubsystem.h"
 #include "Components/ActorComponent.h"
 #include "Interface/InputBindable.h"
 #include "PickInteractionComponent.generated.h"
@@ -41,8 +42,8 @@ protected:
 	float HoldScaleMultiplier = 0.3f;
 
 private:
-	void OnClickStarted(const struct FInputActionValue& Value);
-	void OnClickCompleted(const struct FInputActionValue& Value);
+	void OnClickStarted();
+	void OnClickCompleted();
 
 	void TryPickActor();
 	void Drop();
@@ -56,4 +57,21 @@ private:
 	// 드롭 위치
 	FVector LastValidDropLocation = FVector::ZeroVector;
 	bool bHasValidDropLocation = false;
+
+private: // --- subsystem handling ---
+	UPROPERTY()
+	TObjectPtr<class UHandTrackingSubsystem> HandSubsystem;
+
+	void OnHandDataReceived(const struct FHandData& Data);
+
+	// 핸드트래킹 최신 데이터
+	FHandData LastHandData;
+
+	// 마우스 or 핸드트래킹 소스로 World Ray를 반환
+	bool GetWorldRay(FVector& OutLocation, FVector& OutDirection) const;
+
+public:
+	// true: 마우스 입력 사용 / false: MediaPipe 핸드트래킹 사용
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=Pick)
+	bool bUseMouse = true;
 };

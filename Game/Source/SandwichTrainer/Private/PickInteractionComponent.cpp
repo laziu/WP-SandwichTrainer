@@ -5,9 +5,10 @@
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
 #include "UserExtension.h"
-#include "Interface/Pickable.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Interface/Pickable.h"
+#include "HandTrackingSubsystem.h"
 
 UPickInteractionComponent::UPickInteractionComponent()
 {
@@ -17,6 +18,13 @@ UPickInteractionComponent::UPickInteractionComponent()
 void UPickInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (auto GI = GetOwner()->GetGameInstance())
+	{
+		HandSubsystem = GI->GetSubsystem<UHandTrackingSubsystem>();
+		HandSubsystem->OnHandDataReceived.AddUObject(this, &UPickInteractionComponent::OnHandDataReceived);
+		LOGW(TEXT("HandTracking Subsystem Connected"));
+	}
 }
 
 // ─── Input ───────────────────────────────────────────────────────────────────
@@ -33,30 +41,45 @@ void UPickInteractionComponent::SetupInputBindings(UEnhancedInputComponent* EIC)
 	EIC->BindAction(ClickAction, ETriggerEvent::Completed, this, &UPickInteractionComponent::OnClickCompleted);
 }
 
-void UPickInteractionComponent::OnClickStarted(const FInputActionValue& Value)
+void UPickInteractionComponent::OnClickStarted()
 {
 	LOGW(TEXT("OnClickStarted"));
 	TryPickActor();
 }
 
-void UPickInteractionComponent::OnClickCompleted(const FInputActionValue& Value)
+void UPickInteractionComponent::OnClickCompleted()
 {
 	LOGW(TEXT("OnClickCompleted"));
 	Drop();
+}
+
+// ─── World Ray ────────────────────────────────────────────────────────────────
+
+bool UPickInteractionComponent::GetWorldRay(FVector& OutLocation, FVector& OutDirection) const
+{
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!OwnerPawn) return false;
+
+	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
+	if (!PC) return false;
+
+	if (!bUseMouse)
+	{
+		int32 ViewX, ViewY;
+		PC->GetViewportSize(ViewX, ViewY);
+		return PC->DeprojectScreenPositionToWorld(LastHandData.X * ViewX, LastHandData.Y * ViewY, OutLocation,
+		                                          OutDirection);
+	}
+
+	return PC->DeprojectMousePositionToWorld(OutLocation, OutDirection);
 }
 
 // ─── Pick ─────────────────────────────────────────────────────────────────────
 
 void UPickInteractionComponent::TryPickActor()
 {
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn) return;
-
-	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
-	if (!PC) return;
-
 	FVector WorldLocation, WorldDirection;
-	if (!PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection)) return;
+	if (!GetWorldRay(WorldLocation, WorldDirection)) return;
 
 	FHitResult HitResult;
 	FCollisionQueryParams Params;
@@ -99,14 +122,8 @@ void UPickInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 
 	if (!HeldActor.IsValid()) return;
 
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!OwnerPawn) return;
-
-	APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
-	if (!PC) return;
-
 	FVector WorldLocation, WorldDirection;
-	if (!PC->DeprojectMousePositionToWorld(WorldLocation, WorldDirection)) return;
+	if (!GetWorldRay(WorldLocation, WorldDirection)) return;
 
 	// 1. 마우스를 따라 고정 거리에서 물체 이동
 	const FVector NewLocation = WorldLocation + WorldDirection * HoldDistance;
@@ -159,4 +176,21 @@ void UPickInteractionComponent::Drop()
 
 	HeldActor = nullptr;
 	bHasValidDropLocation = false;
+}
+
+void UPickInteractionComponent::OnHandDataReceived(const FHandData& Data)
+{
+	// Sign 전환 감지
+	if (LastHandData.Sign == TEXT("none") && Data.Sign == TEXT("grab"))
+	{
+		OnClickStarted();
+	}
+	else if (LastHandData.Sign == TEXT("grab") && Data.Sign == TEXT("none"))
+	{
+		OnClickCompleted();
+	}
+
+	LastHandData = Data;
+
+	LOGW(TEXT("Sign: %s | X: %f | Y: %f"), *Data.Sign, Data.X, Data.Y);
 }
