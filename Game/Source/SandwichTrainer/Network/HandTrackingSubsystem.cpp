@@ -76,9 +76,9 @@ FHandData UHandTrackingSubsystem::ParseMessage(const FString& Message)
 
 	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
 	{
-		Result.Sign = JsonObject->GetStringField(TEXT("Sign"));
-		Result.X = JsonObject->GetNumberField("X");
-		Result.Y = JsonObject->GetNumberField("Y");
+		Result.Sign = JsonObject->GetStringField(TEXT("gesture"));
+		JsonObject->TryGetNumberField(TEXT("x"), Result.X);
+		JsonObject->TryGetNumberField(TEXT("y"), Result.Y);
 	}
 	else
 	{
