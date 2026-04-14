@@ -5,6 +5,9 @@
 #include "EnhancedInputComponent.h"
 #include "InputAction.h"
 #include "UserExtension.h"
+#include "Engine/Canvas.h"
+#include "CanvasItem.h"
+#include "GameFramework/HUD.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 
@@ -21,6 +24,14 @@ void UPointerInputComponent::BeginPlay()
 	{
 		HandSubsystem = GI->GetSubsystem<UHandTrackingSubsystem>();
 		HandSubsystem->OnHandDataReceived.AddUObject(this, &UPointerInputComponent::OnHandDataReceived);
+	}
+
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		if (AHUD* HUD = PC->GetHUD())
+		{
+			HUD->OnHUDPostRender.AddUObject(this, &UPointerInputComponent::DrawPointerCircle);
+		}
 	}
 }
 
@@ -80,6 +91,8 @@ void UPointerInputComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			}
 		}
 	}
+
+	LOGW(TEXT("X: %f | Y: %f | Pick: %d"), X, Y, bGrabbing);
 }
 
 // ─── Mouse Click ──────────────────────────────────────────────────────────────
@@ -122,4 +135,29 @@ void UPointerInputComponent::OnHandDataReceived(const FHandData& Data)
 	}
 
 	LastHandData = Data;
+}
+
+// ─── HUD Draw ─────────────────────────────────────────────────────────────────
+
+void UPointerInputComponent::DrawPointerCircle(AHUD* HUD, UCanvas* Canvas)
+{
+	if (bUseMouse || !Canvas) return;
+
+	const float CX = X * Canvas->SizeX;
+	const float CY = Y * Canvas->SizeY;
+	constexpr float Radius = 8.f;
+	constexpr int32 Segments = 4;
+
+	for (int32 i = 0; i < Segments; i++)
+	{
+		const float A0 = (2.f * PI * i) / Segments;
+		const float A1 = (2.f * PI * (i + 1)) / Segments;
+
+		FCanvasLineItem Line(
+			FVector2D(CX + Radius * FMath::Cos(A0), CY + Radius * FMath::Sin(A0)),
+			FVector2D(CX + Radius * FMath::Cos(A1), CY + Radius * FMath::Sin(A1)));
+		Line.LineThickness = 2.f;
+		Line.SetColor(FLinearColor::Green);
+		Canvas->DrawItem(Line);
+	}
 }

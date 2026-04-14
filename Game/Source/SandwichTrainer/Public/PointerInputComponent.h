@@ -48,6 +48,7 @@ private:
 	void HandleClickStarted();
 	void HandleClickCompleted();
 	void OnHandDataReceived(const FHandData& Data);
+	void DrawPointerCircle(AHUD* HUD, UCanvas* Canvas);
 
 	UPROPERTY()
 	TObjectPtr<UHandTrackingSubsystem> HandSubsystem;
