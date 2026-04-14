@@ -155,16 +155,18 @@ LLM 모듈은 프로젝트 루트(`WP-SandwichTrainer/`)의 `LLM/` 하위에 위
 
 ```
 WP-SandwichTrainer/
-├── server/                      # (팀원) MediaPipe 손추적 FastAPI 서버
+├── server/                      # (팀원) MediaPipe 손추적 FastAPI 서버 (port 8888)
 ├── client/                      # (팀원) REST/WebSocket 클라이언트
 ├── Game/                        # (팀원) Unreal 프로젝트
 ├── pyproject.toml               # 루트 의존성 (openai, python-dotenv 포함)
 └── LLM/
+    ├── __init__.py              # 패키지 마커
     ├── .env                     # API 키 등 환경변수 (gitignore 대상)
     ├── config.py                # 환경변수 로드 (OPENAI_API_KEY, LLM_MODEL, LLM_TEMPERATURE, SERVER_HOST/PORT)
+    ├── main.py                  # FastAPI 앱 진입점 (port 8000)
     ├── routers/
     │   ├── __init__.py
-    │   └── ws.py                # WebSocket 라우터 (/ws 엔드포인트)
+    │   └── ws.py                # WebSocket 라우터 (/ws 엔드포인트, type/에러 분기 포함)
     ├── services/
     │   ├── __init__.py
     │   ├── feedback.py          # 피드백 생성 로직 (프롬프트 조립 + OpenAI 호출)
@@ -172,15 +174,17 @@ WP-SandwichTrainer/
     ├── schemas/
     │   ├── __init__.py
     │   ├── request.py           # UE → Server 메시지 모델 (SandwichResult, SandwichError, ErrorType)
-    │   └── response.py          # Server → UE 메시지 모델 (FeedbackResponse)
+    │   └── response.py          # Server → UE 메시지 모델 (FeedbackResponse, ErrorResponse)
     ├── data/
     │   └── recipes.json         # 레시피 데이터
     ├── prompts/
     │   └── feedback_system.txt  # 시스템 프롬프트 템플릿
-    └── llm-feedback.md   # 본 설계 문서
+    ├── docs/
+    │   └── ue_contract.md       # UE팀 공유 계약서 (엔드포인트/스키마/레시피 ID)
+    └── llm_feedback.md          # 본 설계 문서
 ```
 
-> **참고:** `main.py`(FastAPI 앱 진입점)는 아직 작성되지 않았으며, 팀 `server/main.py`에 LLM 라우터를 include할지 별도 서버(port 8000)로 띄울지 결정되지 않았다. (TODO)
+> **기동:** 프로젝트 루트에서 `python -m LLM.main` 또는 `uvicorn LLM.main:app --port 8000 --reload`. 팀 손추적 서버(`server/`, port 8888)와 독립 프로세스로 운영한다.
 
 ### 모듈 역할
 
