@@ -10,9 +10,9 @@ struct FHandData
 {
 	GENERATED_BODY()
 
-	FString Sign;
-	float X;
-	float Y;
+	FString Sign = TEXT("");
+	float X = 0.f;
+	float Y = 0.f;
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnHandData, const FHandData&);
@@ -21,7 +21,7 @@ UCLASS()
 class SANDWICHTRAINER_API UHandTrackingSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
-	
+
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
